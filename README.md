@@ -4,6 +4,26 @@
 
 **适用于 Logstash 8.x 版本**
 
+## 目录结构
+
+```
+plugins/
+└── logstash-outputs/
+    └── ql_logstash_out_jdbc/
+        ├── lib/
+        │   └── logstash/
+        │       └── outputs/
+        │           └── ql_jdbc.rb
+        ├── spec/
+        │   └── outputs/
+        │       └── ql_jdbc_spec.rb
+        ├── ql_logstash_out_jdbc.gemspec
+        ├── README.md
+        └── ql_logstash_out_jdbc-1.0.0.gem
+```
+
+这种目录结构便于管理多个Logstash插件，每个插件类型都有独立的子目录。
+
 ## 系统要求
 
 - **Logstash**: 8.0.0 或更高版本
