@@ -4,8 +4,6 @@
 
 **适用于 Logstash 8.x 版本**
 
-
-
 ## 系统要求
 
 - **Logstash**: 8.0.0 或更高版本
@@ -23,40 +21,33 @@
 
 ## 安装方法
 
-### 方法1: 使用gem文件安装
+### 本地安装方式
+
+将插件文件复制到Logstash的本地插件目录中：
 
 ```bash
-# 下载插件gem文件
-wget https://gitee.com/sugelalala/ql-logstash-output-jdbc/releases/download/v8.0.0/ql_logstash_out_jdbc-1.0.0.gem
+# 1. 复制插件文件到Logstash本地插件目录
+cp -r lib/ /usr/share/logstash/vendor/bundle/jruby/2.6.0/gems/ql_logstash_out_jdbc-1.0.0/
+cp ql_logstash_out_jdbc.gemspec /usr/share/logstash/vendor/bundle/jruby/2.6.0/gems/ql_logstash_out_jdbc-1.0.0/
 
-# 安装插件
-logstash-plugin install ql_logstash_out_jdbc-1.0.0.gem
+# 2. 设置权限
+chown -R logstash:logstash /usr/share/logstash/vendor/bundle/jruby/2.6.0/gems/ql_logstash_out_jdbc-1.0.0/
+
+# 3. 重启Logstash服务
+systemctl restart logstash
 ```
 
-### 方法2: 从源码构建安装
-
-```bash
-# 克隆仓库
-git clone https://gitee.com/sugelalala/ql-logstash-output-jdbc.git
-cd ql-logstash-output-jdbc
-
-# 构建gem文件
-gem build ql_logstash_out_jdbc.gemspec
-
-# 安装插件
-logstash-plugin install ql_logstash_out_jdbc-1.0.0.gem
-```
-
-### 方法3: Docker环境安装
+### Docker环境安装
 
 在Dockerfile中添加：
 
 ```dockerfile
-# 复制插件文件
-COPY custom_plugins/ql_logstash_out_jdbc/ql_logstash_out_jdbc-1.0.0.gem /usr/share/logstash/custom_plugins/
+# 复制插件文件到Logstash本地插件目录
+COPY plugins/ql_logstash_out_jdbc/lib/ /usr/share/logstash/vendor/bundle/jruby/2.6.0/gems/ql_logstash_out_jdbc-1.0.0/lib/
+COPY plugins/ql_logstash_out_jdbc/ql_logstash_out_jdbc.gemspec /usr/share/logstash/vendor/bundle/jruby/2.6.0/gems/ql_logstash_out_jdbc-1.0.0/
 
-# 安装插件
-RUN /usr/share/logstash/bin/logstash-plugin install --no-verify /usr/share/logstash/custom_plugins/ql_logstash_out_jdbc-1.0.0.gem
+# 设置插件目录权限
+RUN chown -R logstash:logstash /usr/share/logstash/vendor/bundle/jruby/2.6.0/gems/ql_logstash_out_jdbc-1.0.0/
 ```
 
 ## 配置示例

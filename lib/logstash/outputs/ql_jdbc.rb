@@ -245,37 +245,33 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
           if value.nil?
             stmt.setNull(index + 1, java.sql.Types.VARCHAR)
           else
-            # 添加调试信息
-            @logger.info("Processing field '#{param}' with value: '#{value}' (type: #{value.class})")
-            
             # 处理日期字段转换 - 通过值格式判断，而不是字段名
             if value.is_a?(String) && value.match?(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/)
-              @logger.info("ISO8601 pattern matched for field '#{param}' with value '#{value}'")
+              @logger.debug("ISO8601 pattern matched for field '#{param}' with value '#{value}'")
               # 转换ISO8601格式为MySQL datetime格式
               begin
                 # 解析ISO8601格式
                 parsed_time = Time.parse(value)
                 # 格式化为MySQL datetime格式 (yyyy-MM-dd HH:mm:ss)
                 formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")
-                @logger.info("Converted ISO8601 date from '#{value}' to '#{formatted_time}' for field '#{param}'")
+                @logger.debug("Converted ISO8601 date from '#{value}' to '#{formatted_time}' for field '#{param}'")
                 stmt.setString(index + 1, formatted_time)
               rescue => e
                 @logger.warn("Failed to parse ISO8601 date for field '#{param}': '#{value}', using original value: #{e.message}")
                 stmt.setString(index + 1, value)
               end
             elsif value.is_a?(LogStash::Timestamp)
-              @logger.info("LogStash::Timestamp detected for field '#{param}' with value '#{value}'")
+              @logger.debug("LogStash::Timestamp detected for field '#{param}' with value '#{value}'")
               # 直接格式化LogStash::Timestamp为MySQL datetime格式
               begin
                 formatted_time = value.strftime("%Y-%m-%d %H:%M:%S")
-                @logger.info("Converted LogStash::Timestamp from '#{value}' to '#{formatted_time}' for field '#{param}'")
+                @logger.debug("Converted LogStash::Timestamp from '#{value}' to '#{formatted_time}' for field '#{param}'")
                 stmt.setString(index + 1, formatted_time)
               rescue => e
                 @logger.warn("Failed to format LogStash::Timestamp for field '#{param}': '#{value}', using original value: #{e.message}")
                 stmt.setString(index + 1, value.to_s)
               end
             else
-              @logger.info("No date conversion needed for field '#{param}' with value '#{value}'")
               # 避免不必要的字符串转换
               case value
               when String
