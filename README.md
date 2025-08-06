@@ -2,6 +2,14 @@
 
 一个高性能的Logstash JDBC输出插件，支持批量插入、连接池管理和自动重试机制。
 
+**适用于 Logstash 8.x 版本**
+
+## 系统要求
+
+- **Logstash**: 8.0.0 或更高版本
+- **Java**: JDK 11 或更高版本
+- **Ruby**: 2.7 或更高版本（Logstash 8.x 内置）
+
 ## 功能特性
 
 - ✅ **批量插入**: 支持批量数据插入，大幅提升同步性能
@@ -17,7 +25,7 @@
 
 ```bash
 # 下载插件gem文件
-wget https://github.com/suuugeee/ql-logstash-out-jdbc/releases/download/v1.0.0/ql_logstash_out_jdbc-1.0.0.gem
+wget https://github.com/suuugeee/ql-logstash-out-jdbc/releases/download/v8.0.0/ql_logstash_out_jdbc-1.0.0.gem
 
 # 安装插件
 logstash-plugin install ql_logstash_out_jdbc-1.0.0.gem
@@ -204,11 +212,12 @@ output {
 
 ## 版本历史
 
-### v1.0.0
-- 初始版本发布
+### v8.0.0
+- 适配 Logstash 8.x 版本
 - 支持基础JDBC操作
 - 实现连接池和重试机制
 - 添加批量处理功能
+- 优化性能和稳定性
 
 ## 贡献指南
 
