@@ -26,6 +26,7 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
   config :retry_delay, :validate => :number, :default => 1000
   config :batch_size, :validate => :number, :default => 100
   config :flush_interval, :validate => :number, :default => 5
+  config :output_delay, :validate => :number, :default => 0, :description => "每次输出后的延迟时间（毫秒），用于控制输出速度"
 
   public
   def register
@@ -38,6 +39,7 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     @logger.info("  - username: #{@username}")
     @logger.info("  - batch_size: #{@batch_size}")
     @logger.info("  - max_pool_size: #{@max_pool_size}")
+    @logger.info("  - output_delay: #{@output_delay}ms")
     
     # 检查JDBC驱动文件是否存在
     begin
@@ -288,6 +290,12 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
       records_per_second = (batch_size / (total_time / 1000.0)).round(2)
       @logger.info("Successfully inserted #{batch_size} records in #{total_time}ms (#{records_per_second} records/sec)")
       @batch_buffer.clear
+      
+      # 添加数据库插入后的延迟控制
+      if @output_delay > 0
+        @logger.debug("Applying output delay after database insertion: #{@output_delay}ms")
+        sleep(@output_delay / 1000.0)
+      end
     rescue => e
       conn.rollback()
       @logger.error("Batch flush failed after #{((Time.now - start_time) * 1000).round(2)}ms: #{e.message}")
