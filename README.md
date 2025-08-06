@@ -230,5 +230,6 @@ MIT License
 ## 联系方式
 
 - GitHub: [https://github.com/suuugeee/ql-logstash-out-jdbc](https://github.com/suuugeee/ql-logstash-out-jdbc)
+- 腾讯云开发者平台: [https://cnb.cool/qinglang.zeng/ql_logstash_out_jdbc](https://cnb.cool/qinglang.zeng/ql_logstash_out_jdbc)
 - Issues: [https://github.com/suuugeee/ql-logstash-out-jdbc/issues](https://github.com/suuugeee/ql-logstash-out-jdbc/issues)
 - Email: qinglangzeng@163.com 
