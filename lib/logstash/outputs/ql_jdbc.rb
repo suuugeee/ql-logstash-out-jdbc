@@ -293,7 +293,7 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
       
       # 添加数据库插入后的延迟控制
       if @output_delay > 0
-        @logger.debug("Applying output delay after database insertion: #{@output_delay}ms")
+        @logger.info("Applying output delay after database insertion: #{@output_delay}ms")
         sleep(@output_delay / 1000.0)
       end
     rescue => e
