@@ -1,0 +1,42 @@
+# QL Logstash JDBC 批量输出插件配置
+# 参考百度 RASP 插件开发模式
+
+plugin:
+  name: "ql_jdbc"
+  version: "1.0.0"
+  description: "支持批量插入的 Logstash JDBC 输出插件"
+  author: "QL Team"
+  license: "Apache-2.0"
+
+# 数据库连接配置
+database:
+  driver_jar_path: "/usr/share/logstash/drivers/mysql-connector-java-8.0.33.jar"
+  driver_class: "com.mysql.cj.jdbc.Driver"
+  connection_string: "jdbc:mysql://localhost:3306/test?useSSL=false&serverTimezone=UTC"
+  username: "root"
+  password: "password"
+
+# 批量插入配置
+batch:
+  size: 1000
+  flush_interval: 5
+  max_retries: 3
+  retry_interval: 1
+
+# 连接池配置
+connection_pool:
+  max_size: 5
+  timeout: 10000
+  idle_timeout: 300000
+
+# 性能监控配置
+monitoring:
+  enabled: true
+  metrics_interval: 60
+  log_level: "info"
+
+# 安全配置
+security:
+  sql_injection_protection: true
+  connection_encryption: false
+  audit_logging: true 
