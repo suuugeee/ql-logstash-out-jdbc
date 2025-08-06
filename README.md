@@ -27,7 +27,7 @@
 
 ```bash
 # 下载插件gem文件
-wget https://github.com/suuugeee/ql-logstash-out-jdbc/releases/download/v8.0.0/ql_logstash_out_jdbc-1.0.0.gem
+wget https://gitee.com/sugelalala/ql-logstash-output-jdbc/releases/download/v8.0.0/ql_logstash_out_jdbc-1.0.0.gem
 
 # 安装插件
 logstash-plugin install ql_logstash_out_jdbc-1.0.0.gem
@@ -37,8 +37,8 @@ logstash-plugin install ql_logstash_out_jdbc-1.0.0.gem
 
 ```bash
 # 克隆仓库
-git clone https://github.com/suuugeee/ql-logstash-out-jdbc.git
-cd ql-logstash-out-jdbc
+git clone https://gitee.com/sugelalala/ql-logstash-output-jdbc.git
+cd ql-logstash-output-jdbc
 
 # 构建gem文件
 gem build ql_logstash_out_jdbc.gemspec
@@ -231,7 +231,8 @@ MIT License
 
 ## 联系方式
 
+- Gitee: [https://gitee.com/sugelalala/ql-logstash-output-jdbc](https://gitee.com/sugelalala/ql-logstash-output-jdbc)
 - GitHub: [https://github.com/suuugeee/ql-logstash-out-jdbc](https://github.com/suuugeee/ql-logstash-out-jdbc)
 - 腾讯云开发者平台: [https://cnb.cool/qinglang.zeng/ql_logstash_out_jdbc](https://cnb.cool/qinglang.zeng/ql_logstash_out_jdbc)
-- Issues: [https://github.com/suuugeee/ql-logstash-out-jdbc/issues](https://github.com/suuugeee/ql-logstash-out-jdbc/issues)
+- Issues: [https://gitee.com/sugelalala/ql-logstash-output-jdbc/issues](https://gitee.com/sugelalala/ql-logstash-output-jdbc/issues)
 - Email: qinglangzeng@163.com 

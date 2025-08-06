@@ -6,7 +6,7 @@ Gem::Specification.new do |s|
   s.description = '支持批量插入的 Logstash JDBC 输出插件，提高数据同步性能'
   s.authors = ['QL Team']
   s.email = 'support@ql.com'
-  s.homepage = 'https://github.com/ql/ql_logstash_out_jdbc'
+  s.homepage = 'https://gitee.com/sugelalala/ql-logstash-output-jdbc'
   s.require_paths = ['lib']
 
   # Files
