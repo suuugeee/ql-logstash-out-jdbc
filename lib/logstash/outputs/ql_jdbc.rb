@@ -245,46 +245,21 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
           if value.nil?
             stmt.setNull(index + 1, java.sql.Types.VARCHAR)
           else
-            # 处理日期字段转换 - 通过值格式判断，而不是字段名
-            if value.is_a?(String) && value.match?(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/)
-              @logger.debug("ISO8601 pattern matched for field '#{param}' with value '#{value}'")
-              # 转换ISO8601格式为MySQL datetime格式
-              begin
-                # 解析ISO8601格式
-                parsed_time = Time.parse(value)
-                # 格式化为MySQL datetime格式 (yyyy-MM-dd HH:mm:ss)
-                formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")
-                @logger.debug("Converted ISO8601 date from '#{value}' to '#{formatted_time}' for field '#{param}'")
-                stmt.setString(index + 1, formatted_time)
-              rescue => e
-                @logger.warn("Failed to parse ISO8601 date for field '#{param}': '#{value}', using original value: #{e.message}")
-                stmt.setString(index + 1, value)
-              end
-            elsif value.is_a?(LogStash::Timestamp)
-              @logger.debug("LogStash::Timestamp detected for field '#{param}' with value '#{value}'")
-              # 直接格式化LogStash::Timestamp为MySQL datetime格式
-              begin
-                formatted_time = value.strftime("%Y-%m-%d %H:%M:%S")
-                @logger.debug("Converted LogStash::Timestamp from '#{value}' to '#{formatted_time}' for field '#{param}'")
-                stmt.setString(index + 1, formatted_time)
-              rescue => e
-                @logger.warn("Failed to format LogStash::Timestamp for field '#{param}': '#{value}', using original value: #{e.message}")
-                stmt.setString(index + 1, value.to_s)
-              end
+            # 智能时间字段检测和处理
+            processed_value = process_time_field(param, value)
+            
+            # 根据处理后的值类型设置参数
+            case processed_value
+            when String
+              stmt.setString(index + 1, processed_value)
+            when Integer
+              stmt.setLong(index + 1, processed_value)
+            when Float
+              stmt.setDouble(index + 1, processed_value)
+            when java.sql.Timestamp
+              stmt.setTimestamp(index + 1, processed_value)
             else
-              # 避免不必要的字符串转换
-              case value
-              when String
-                stmt.setString(index + 1, value)
-              when Integer
-                stmt.setLong(index + 1, value)
-              when Float
-                stmt.setDouble(index + 1, value)
-              when java.sql.Timestamp
-                stmt.setTimestamp(index + 1, value)
-              else
-                stmt.setString(index + 1, value.to_s)
-              end
+              stmt.setString(index + 1, processed_value.to_s)
             end
           end
         end
@@ -314,5 +289,80 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
       @logger.error("Batch flush failed after #{((Time.now - start_time) * 1000).round(2)}ms: #{e.message}")
       raise e
     end
+  end
+  
+  private
+  
+  # 智能时间字段检测和处理
+  def process_time_field(field_name, value)
+    # 1. 检查是否为LogStash::Timestamp对象
+    if value.is_a?(LogStash::Timestamp)
+      @logger.debug("LogStash::Timestamp detected for field '#{field_name}' with value '#{value}'")
+      begin
+        formatted_time = value.strftime("%Y-%m-%d %H:%M:%S")
+        @logger.debug("Converted LogStash::Timestamp from '#{value}' to '#{formatted_time}' for field '#{field_name}'")
+        return formatted_time
+      rescue => e
+        @logger.warn("Failed to format LogStash::Timestamp for field '#{field_name}': '#{value}', using original value: #{e.message}")
+        return value.to_s
+      end
+    end
+    
+    # 2. 检查字符串值是否为时间格式
+    if value.is_a?(String)
+      # ISO8601格式检测 (2024-05-25T17:11:12Z 或 2024-05-25T17:11:12.123Z)
+      if value.match?(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/)
+        @logger.debug("ISO8601 pattern matched for field '#{field_name}' with value '#{value}'")
+        begin
+          parsed_time = Time.parse(value)
+          formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")
+          @logger.debug("Converted ISO8601 date from '#{value}' to '#{formatted_time}' for field '#{field_name}'")
+          return formatted_time
+        rescue => e
+          @logger.warn("Failed to parse ISO8601 date for field '#{field_name}': '#{value}', using original value: #{e.message}")
+          return value
+        end
+      end
+      
+      # MySQL datetime格式检测 (2024-05-25 17:11:12)
+      if value.match?(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+        @logger.debug("MySQL datetime format detected for field '#{field_name}' with value '#{value}'")
+        return value
+      end
+      
+      # 日期格式检测 (2024-05-25)
+      if value.match?(/^\d{4}-\d{2}-\d{2}$/)
+        @logger.debug("Date format detected for field '#{field_name}' with value '#{value}'")
+        return value
+      end
+      
+      # 时间格式检测 (17:11:12)
+      if value.match?(/^\d{2}:\d{2}:\d{2}$/)
+        @logger.debug("Time format detected for field '#{field_name}' with value '#{value}'")
+        return value
+      end
+    end
+    
+    # 3. 检查字段名是否包含时间相关关键词
+    time_keywords = ['time', 'date', 'created', 'updated', 'modified', 'timestamp', 'start', 'end', 'begin', 'finish']
+    if time_keywords.any? { |keyword| field_name.downcase.include?(keyword) }
+      @logger.debug("Time-related field name detected: '#{field_name}' with value '#{value}'")
+      # 如果是字符串，尝试解析为时间格式
+      if value.is_a?(String)
+        begin
+          # 尝试多种时间格式解析
+          parsed_time = Time.parse(value)
+          formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")
+          @logger.debug("Converted time field '#{field_name}' from '#{value}' to '#{formatted_time}'")
+          return formatted_time
+        rescue => e
+          @logger.debug("Failed to parse time field '#{field_name}': '#{value}', using original value: #{e.message}")
+          return value
+        end
+      end
+    end
+    
+    # 4. 如果不是时间字段，返回原值
+    return value
   end
 end 
