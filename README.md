@@ -59,8 +59,8 @@ output {
     driver_jar_path => "/path/to/mysql-connector-java.jar"
     driver_class => "com.mysql.cj.jdbc.Driver"
     connection_string => "jdbc:mysql://localhost:3306/database?useSSL=false"
-    username => "username"
-    password => "password"
+    username => "your_username"
+    password => "your_password"
     statement => [
       "INSERT INTO table (field1, field2) VALUES (?, ?)",
       "field1", "field2"
@@ -78,8 +78,8 @@ output {
     driver_jar_path => "/path/to/mysql-connector-java.jar"
     driver_class => "com.mysql.cj.jdbc.Driver"
     connection_string => "jdbc:mysql://localhost:3306/database?useSSL=false&serverTimezone=UTC"
-    username => "username"
-    password => "password"
+    username => "your_username"
+    password => "your_password"
     
     # SQL语句配置
     statement => [
@@ -132,7 +132,7 @@ output {
 ```ruby
 input {
   jdbc {
-    jdbc_connection_string => "jdbc:mysql://source:3306/source_db"
+    jdbc_connection_string => "jdbc:mysql://source_host:3306/source_db"
     statement => "SELECT * FROM source_table"
     schedule => "0 2 * * *"
   }
@@ -140,7 +140,7 @@ input {
 
 output {
   ql_jdbc {
-    connection_string => "jdbc:mysql://target:3306/target_db"
+    connection_string => "jdbc:mysql://target_host:3306/target_db"
     statement => [
       "INSERT INTO target_table (id, data) VALUES (?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)",
       "id", "data"
