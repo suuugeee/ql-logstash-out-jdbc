@@ -107,6 +107,10 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     
     @logger.info("连接池初始化完成，实际连接数: #{@connection_pool.size}")
     
+    # 获取目标表字段信息
+    @field_info = get_table_field_info
+    @logger.info("目标表字段信息获取完成，字段数: #{@field_info.size}")
+    
     # 启动定时刷新线程
     @logger.info("启动定时刷新线程，间隔: #{@flush_interval}秒")
     @flush_thread = Thread.new do
@@ -293,8 +297,247 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
   
   private
   
+  # 获取目标表字段信息
+  def get_table_field_info
+    field_info = {}
+    conn = nil
+    
+    begin
+      conn = DriverManager.getConnection(@connection_string, @username, @password)
+      
+      # 从INSERT语句中提取表名
+      table_name = extract_table_name_from_statement
+      @logger.info("检测到目标表名: #{table_name}")
+      
+      # 获取表结构信息
+      sql = "DESCRIBE #{table_name}"
+      @logger.info("执行SQL获取表结构: #{sql}")
+      
+      stmt = conn.createStatement
+      rs = stmt.executeQuery(sql)
+      
+      while rs.next
+        field_name = rs.getString("Field")
+        field_type = rs.getString("Type")
+        is_null = rs.getString("Null")
+        key_type = rs.getString("Key")
+        default_value = rs.getString("Default")
+        extra = rs.getString("Extra")
+        
+        field_info[field_name] = {
+          'type' => field_type,
+          'is_null' => is_null == 'YES',
+          'key_type' => key_type,
+          'default_value' => default_value,
+          'extra' => extra
+        }
+        
+        @logger.debug("字段信息: #{field_name} => #{field_type} (NULL: #{is_null}, KEY: #{key_type})")
+      end
+      
+      rs.close
+      stmt.close
+      
+    rescue => e
+      @logger.error("获取表字段信息失败: #{e.message}")
+      @logger.error("将使用默认字段处理逻辑")
+      # 返回空哈希，使用默认处理逻辑
+      return {}
+    ensure
+      conn.close if conn
+    end
+    
+    field_info
+  end
+  
+  # 从INSERT语句中提取表名
+  def extract_table_name_from_statement
+    # 匹配 INSERT INTO table_name 模式
+    if @statement.first.match(/INSERT\s+INTO\s+(\w+)/i)
+      return $1
+    end
+    
+    # 如果无法提取，返回默认表名
+    @logger.warn("无法从INSERT语句中提取表名，使用默认表名: rental_user")
+    return "rental_user"
+  end
+  
   # 智能时间字段检测和处理
   def process_time_field(field_name, value)
+    # 1. 优先使用MySQL字段信息进行精确处理
+    if @field_info && @field_info[field_name]
+      field_type = @field_info[field_name]['type']
+      @logger.debug("MySQL字段信息: '#{field_name}' => #{field_type}")
+      
+      # 根据MySQL字段类型进行精确处理
+      return process_field_by_mysql_type(field_name, value, field_type)
+    end
+    
+    # 2. 如果没有MySQL字段信息，使用启发式检测
+    return process_field_by_heuristic(field_name, value)
+  end
+  
+  # 根据MySQL字段类型处理字段
+  def process_field_by_mysql_type(field_name, value, mysql_type)
+    mysql_type_lower = mysql_type.downcase
+    
+    # 时间相关字段类型
+    if mysql_type_lower.include?('datetime') || mysql_type_lower.include?('timestamp')
+      return process_datetime_field(field_name, value)
+    elsif mysql_type_lower.include?('date')
+      return process_date_field(field_name, value)
+    elsif mysql_type_lower.include?('time')
+      return process_time_only_field(field_name, value)
+    elsif mysql_type_lower.include?('int') || mysql_type_lower.include?('bigint')
+      return process_integer_field(field_name, value)
+    elsif mysql_type_lower.include?('decimal') || mysql_type_lower.include?('float') || mysql_type_lower.include?('double')
+      return process_decimal_field(field_name, value)
+    elsif mysql_type_lower.include?('varchar') || mysql_type_lower.include?('text') || mysql_type_lower.include?('char')
+      return process_string_field(field_name, value)
+    else
+      @logger.debug("未知MySQL字段类型: #{mysql_type} for field '#{field_name}', 使用启发式处理")
+      return process_field_by_heuristic(field_name, value)
+    end
+  end
+  
+  # 处理datetime字段
+  def process_datetime_field(field_name, value)
+    if value.is_a?(LogStash::Timestamp)
+      @logger.debug("LogStash::Timestamp detected for datetime field '#{field_name}' with value '#{value}'")
+      begin
+        formatted_time = value.strftime("%Y-%m-%d %H:%M:%S")
+        @logger.debug("Converted LogStash::Timestamp to datetime: '#{value}' => '#{formatted_time}'")
+        return formatted_time
+      rescue => e
+        @logger.warn("Failed to format LogStash::Timestamp for datetime field '#{field_name}': #{e.message}")
+        return value.to_s
+      end
+    elsif value.is_a?(String)
+      # ISO8601格式检测
+      if value.match?(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/)
+        @logger.debug("ISO8601 format detected for datetime field '#{field_name}'")
+        begin
+          parsed_time = Time.parse(value)
+          formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")
+          @logger.debug("Converted ISO8601 to datetime: '#{value}' => '#{formatted_time}'")
+          return formatted_time
+        rescue => e
+          @logger.warn("Failed to parse ISO8601 for datetime field '#{field_name}': #{e.message}")
+          return value
+        end
+      elsif value.match?(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+        @logger.debug("MySQL datetime format already correct for field '#{field_name}'")
+        return value
+      end
+    end
+    
+    # 如果无法处理，返回原值
+    return value
+  end
+  
+  # 处理date字段
+  def process_date_field(field_name, value)
+    if value.is_a?(LogStash::Timestamp)
+      @logger.debug("LogStash::Timestamp detected for date field '#{field_name}'")
+      begin
+        formatted_date = value.strftime("%Y-%m-%d")
+        @logger.debug("Converted LogStash::Timestamp to date: '#{value}' => '#{formatted_date}'")
+        return formatted_date
+      rescue => e
+        @logger.warn("Failed to format LogStash::Timestamp for date field '#{field_name}': #{e.message}")
+        return value.to_s
+      end
+    elsif value.is_a?(String)
+      if value.match?(/^\d{4}-\d{2}-\d{2}$/)
+        @logger.debug("Date format already correct for field '#{field_name}'")
+        return value
+      elsif value.match?(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+        @logger.debug("Extracting date from datetime for field '#{field_name}'")
+        begin
+          parsed_time = Time.parse(value)
+          formatted_date = parsed_time.strftime("%Y-%m-%d")
+          @logger.debug("Extracted date: '#{value}' => '#{formatted_date}'")
+          return formatted_date
+        rescue => e
+          @logger.warn("Failed to extract date from datetime for field '#{field_name}': #{e.message}")
+          return value
+        end
+      end
+    end
+    
+    return value
+  end
+  
+  # 处理time字段
+  def process_time_only_field(field_name, value)
+    if value.is_a?(LogStash::Timestamp)
+      @logger.debug("LogStash::Timestamp detected for time field '#{field_name}'")
+      begin
+        formatted_time = value.strftime("%H:%M:%S")
+        @logger.debug("Converted LogStash::Timestamp to time: '#{value}' => '#{formatted_time}'")
+        return formatted_time
+      rescue => e
+        @logger.warn("Failed to format LogStash::Timestamp for time field '#{field_name}': #{e.message}")
+        return value.to_s
+      end
+    elsif value.is_a?(String)
+      if value.match?(/^\d{2}:\d{2}:\d{2}$/)
+        @logger.debug("Time format already correct for field '#{field_name}'")
+        return value
+      end
+    end
+    
+    return value
+  end
+  
+  # 处理整数字段
+  def process_integer_field(field_name, value)
+    if value.is_a?(String)
+      begin
+        integer_value = value.to_i
+        @logger.debug("Converted string to integer for field '#{field_name}': '#{value}' => #{integer_value}")
+        return integer_value
+      rescue => e
+        @logger.warn("Failed to convert string to integer for field '#{field_name}': '#{value}' => #{e.message}")
+        return value
+      end
+    elsif value.is_a?(Float)
+      integer_value = value.to_i
+      @logger.debug("Converted float to integer for field '#{field_name}': #{value} => #{integer_value}")
+      return integer_value
+    end
+    
+    return value
+  end
+  
+  # 处理小数字段
+  def process_decimal_field(field_name, value)
+    if value.is_a?(String)
+      begin
+        float_value = value.to_f
+        @logger.debug("Converted string to float for field '#{field_name}': '#{value}' => #{float_value}")
+        return float_value
+      rescue => e
+        @logger.warn("Failed to convert string to float for field '#{field_name}': '#{value}' => #{e.message}")
+        return value
+      end
+    end
+    
+    return value
+  end
+  
+  # 处理字符串字段
+  def process_string_field(field_name, value)
+    if value.is_a?(LogStash::Timestamp)
+      @logger.debug("Converting LogStash::Timestamp to string for field '#{field_name}'")
+      return value.strftime("%Y-%m-%d %H:%M:%S")
+    end
+    
+    return value.to_s
+  end
+  
+  # 启发式字段处理（当没有MySQL字段信息时使用）
+  def process_field_by_heuristic(field_name, value)
     # 1. 检查是否为LogStash::Timestamp对象
     if value.is_a?(LogStash::Timestamp)
       @logger.debug("LogStash::Timestamp detected for field '#{field_name}' with value '#{value}'")
