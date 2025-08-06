@@ -405,7 +405,7 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     if value.is_a?(LogStash::Timestamp)
       @logger.debug("LogStash::Timestamp detected for datetime field '#{field_name}' with value '#{value}'")
       begin
-        formatted_time = value.strftime("%Y-%m-%d %H:%M:%S")
+        formatted_time = value.time.strftime("%Y-%m-%d %H:%M:%S")
         @logger.debug("Converted LogStash::Timestamp to datetime: '#{value}' => '#{formatted_time}'")
         return formatted_time
       rescue => e
@@ -440,7 +440,7 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     if value.is_a?(LogStash::Timestamp)
       @logger.debug("LogStash::Timestamp detected for date field '#{field_name}'")
       begin
-        formatted_date = value.strftime("%Y-%m-%d")
+        formatted_date = value.time.strftime("%Y-%m-%d")
         @logger.debug("Converted LogStash::Timestamp to date: '#{value}' => '#{formatted_date}'")
         return formatted_date
       rescue => e
@@ -473,7 +473,7 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     if value.is_a?(LogStash::Timestamp)
       @logger.debug("LogStash::Timestamp detected for time field '#{field_name}'")
       begin
-        formatted_time = value.strftime("%H:%M:%S")
+        formatted_time = value.time.strftime("%H:%M:%S")
         @logger.debug("Converted LogStash::Timestamp to time: '#{value}' => '#{formatted_time}'")
         return formatted_time
       rescue => e
@@ -530,7 +530,7 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
   def process_string_field(field_name, value)
     if value.is_a?(LogStash::Timestamp)
       @logger.debug("Converting LogStash::Timestamp to string for field '#{field_name}'")
-      return value.strftime("%Y-%m-%d %H:%M:%S")
+      return value.time.strftime("%Y-%m-%d %H:%M:%S")
     end
     
     return value.to_s
@@ -542,7 +542,7 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     if value.is_a?(LogStash::Timestamp)
       @logger.debug("LogStash::Timestamp detected for field '#{field_name}' with value '#{value}'")
       begin
-        formatted_time = value.strftime("%Y-%m-%d %H:%M:%S")
+        formatted_time = value.time.strftime("%Y-%m-%d %H:%M:%S")
         @logger.debug("Converted LogStash::Timestamp from '#{value}' to '#{formatted_time}' for field '#{field_name}'")
         return formatted_time
       rescue => e
