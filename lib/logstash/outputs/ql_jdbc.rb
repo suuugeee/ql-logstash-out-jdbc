@@ -407,6 +407,8 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
       return process_integer_field(field_name, value)
     elsif mysql_type_lower.include?('decimal') || mysql_type_lower.include?('float') || mysql_type_lower.include?('double')
       return process_decimal_field(field_name, value)
+    elsif mysql_type_lower.include?('bit')
+      return process_bit_field(field_name, value)
     elsif mysql_type_lower.include?('varchar') || mysql_type_lower.include?('text') || mysql_type_lower.include?('char')
       return process_string_field(field_name, value)
     else
@@ -534,6 +536,24 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     elsif value.is_a?(Integer)
       return (value == 0 || value == 1) ? value : 0
     else
+      return 0
+    end
+  end
+
+  # 处理bit字段
+  def process_bit_field(field_name, value)
+    @logger.debug("处理bit字段 '#{field_name}' with value: #{value}")
+    if value.nil?
+      @logger.debug("bit字段 '#{field_name}' 值为nil，返回0")
+      return 0
+    end
+    
+    # 确保只返回0或1，适合bit(1)类型
+    if value == true || value == "true" || value == "1" || value == "yes" || value == "on" || value == 1
+      @logger.debug("bit字段 '#{field_name}' 转换结果: #{value} => 1")
+      return 1
+    else
+      @logger.debug("bit字段 '#{field_name}' 转换结果: #{value} => 0")
       return 0
     end
   end
