@@ -430,8 +430,22 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
         return value.to_s
       end
     elsif value.is_a?(String)
+      # 时间戳字符串检测（13位或10位数字）
+      if value.match?(/^\d{10,13}$/)
+        @logger.debug("Timestamp string detected for datetime field '#{field_name}' with value '#{value}'")
+        begin
+          # 如果是13位时间戳，转换为10位
+          timestamp = value.length == 13 ? value.to_i / 1000 : value.to_i
+          parsed_time = Time.at(timestamp)
+          formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")
+          @logger.debug("Converted timestamp to datetime: '#{value}' => '#{formatted_time}'")
+          return formatted_time
+        rescue => e
+          @logger.warn("Failed to parse timestamp for datetime field '#{field_name}': #{e.message}")
+          return value
+        end
       # ISO8601格式检测
-      if value.match?(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/)
+      elsif value.match?(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/)
         @logger.debug("ISO8601 format detected for datetime field '#{field_name}'")
         begin
           parsed_time = Time.parse(value)
