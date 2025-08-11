@@ -403,8 +403,6 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
       return process_date_field(field_name, value)
     elsif mysql_type_lower.include?('time')
       return process_time_only_field(field_name, value)
-    elsif mysql_type_lower.include?('bit')
-      return process_bit_field(field_name, value)
     elsif mysql_type_lower.include?('int') || mysql_type_lower.include?('bigint')
       return process_integer_field(field_name, value)
     elsif mysql_type_lower.include?('decimal') || mysql_type_lower.include?('float') || mysql_type_lower.include?('double')
@@ -525,31 +523,17 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     false
   end
   
-  # 处理bit字段 - 将布尔值转换为整数
-  def process_bit_field(field_name, value)
-    @logger.debug("Processing bit field '#{field_name}' with value: #{value} (#{value.class})")
-    
-    # 处理布尔值
+  # 将布尔值转换为tinyint
+  def convert_boolean_to_tinyint(value)
     if value == true || value == "true" || value == "1" || value == "yes" || value == "on"
-      @logger.debug("Converting boolean true to integer 1 for bit field '#{field_name}'")
       return 1
     elsif value == false || value == "false" || value == "0" || value == "no" || value == "off"
-      @logger.debug("Converting boolean false to integer 0 for bit field '#{field_name}'")
       return 0
     elsif value.nil? || value == "" || value == "null"
-      @logger.debug("Converting null/empty to integer 0 for bit field '#{field_name}'")
       return 0
     elsif value.is_a?(Integer)
-      # 如果已经是整数，确保是0或1
-      if value == 0 || value == 1
-        @logger.debug("Integer value #{value} is already valid for bit field '#{field_name}'")
-        return value
-      else
-        @logger.warn("Invalid integer value #{value} for bit field '#{field_name}', converting to 0")
-        return 0
-      end
+      return (value == 0 || value == 1) ? value : 0
     else
-      @logger.warn("Unknown value type #{value.class} with value '#{value}' for bit field '#{field_name}', converting to 0")
       return 0
     end
   end
@@ -602,10 +586,10 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
   
   # 启发式字段处理（当没有MySQL字段信息时使用）
   def process_field_by_heuristic(field_name, value)
-    # 1. 智能检测布尔值，不依赖字段名
+    # 1. 智能检测布尔值，转换为tinyint
     if is_boolean_value?(value)
       @logger.debug("Boolean value detected for field '#{field_name}' with value '#{value}'")
-      return process_bit_field(field_name, value)
+      return convert_boolean_to_tinyint(value)
     end
     
     # 2. 检查是否为LogStash::Timestamp对象
