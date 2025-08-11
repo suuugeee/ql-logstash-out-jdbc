@@ -249,7 +249,7 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
         @statement[1..-1].each_with_index do |param, index|
           value = event.get(param)
           if value.nil?
-            stmt.setNull(index + 1, java.sql.Types.VARCHAR)
+            stmt.setNull(index + 1, java.sql.Types::VARCHAR)
           else
             # 智能时间字段检测和处理
             processed_value = process_time_field(param, value)
