@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name = 'ql_logstash_out_jdbc'
-  s.version = '1.0.0'
+  s.version = '1.0.1'
   s.licenses = ['Apache-2.0']
   s.summary = 'QL Logstash JDBC 批量输出插件'
   s.description = '支持批量插入的 Logstash JDBC 输出插件，提高数据同步性能'

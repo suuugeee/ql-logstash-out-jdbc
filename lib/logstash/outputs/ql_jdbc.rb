@@ -20,33 +20,37 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
   config :username, :validate => :string, :required => true
   config :password, :validate => :string, :required => true
   config :statement, :validate => :array, :required => true
-  config :max_pool_size, :validate => :number, :default => 5
+  config :max_pool_size, :validate => :number, :default => 10
   config :connection_timeout, :validate => :number, :default => 10000
   config :max_retries, :validate => :number, :default => 3
   config :retry_delay, :validate => :number, :default => 1000
   config :batch_size, :validate => :number, :default => 100
   config :flush_interval, :validate => :number, :default => 5
   config :output_delay, :validate => :number, :default => 0, :description => "每次输出后的延迟时间（毫秒），用于控制输出速度"
+  config :verbose_logging, :validate => :boolean, :default => false, :description => "是否启用详细日志输出"
+  config :pool_monitor_interval, :validate => :number, :default => 60, :description => "连接池监控间隔（秒）"
 
   public
   def register
     @logger.info("=== QL JDBC 插件开始注册 ===")
     @logger.info("插件版本: 1.0.0")
-    @logger.info("配置参数:")
-    @logger.info("  - driver_jar_path: #{@driver_jar_path}")
-    @logger.info("  - driver_class: #{@driver_class}")
-    @logger.info("  - connection_string: #{@connection_string}")
-    @logger.info("  - username: #{@username}")
-    @logger.info("  - batch_size: #{@batch_size}")
-    @logger.info("  - max_pool_size: #{@max_pool_size}")
-    @logger.info("  - output_delay: #{@output_delay}ms")
+    if @verbose_logging
+      @logger.info("配置参数:")
+      @logger.info("  - driver_jar_path: #{@driver_jar_path}")
+      @logger.info("  - driver_class: #{@driver_class}")
+      @logger.info("  - connection_string: #{@connection_string}")
+      @logger.info("  - username: #{@username}")
+      @logger.info("  - batch_size: #{@batch_size}")
+      @logger.info("  - max_pool_size: #{@max_pool_size}")
+      @logger.info("  - output_delay: #{@output_delay}ms")
+    end
     
     # 检查JDBC驱动文件是否存在
     begin
       driver_file = java.io.File.new(@driver_jar_path)
       if driver_file.exists()
-        @logger.info("JDBC驱动文件存在: #{@driver_jar_path}")
-        @logger.info("文件大小: #{driver_file.length()} bytes")
+        @logger.info("JDBC驱动文件存在: #{@driver_jar_path}") if @verbose_logging
+        @logger.info("文件大小: #{driver_file.length()} bytes") if @verbose_logging
       else
         @logger.error("JDBC驱动文件不存在: #{@driver_jar_path}")
         raise "JDBC驱动文件不存在"
@@ -58,9 +62,9 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     
     # 尝试加载JDBC驱动
     begin
-      @logger.info("尝试加载JDBC驱动: #{@driver_class}")
+      @logger.info("尝试加载JDBC驱动: #{@driver_class}") if @verbose_logging
       java.lang.Class.forName(@driver_class)
-      @logger.info("JDBC驱动加载成功: #{@driver_class}")
+      @logger.info("JDBC驱动加载成功: #{@driver_class}") if @verbose_logging
     rescue => e
       @logger.error("JDBC驱动加载失败: #{e.message}")
       @logger.error("请确保JDBC驱动JAR文件已正确放置在classpath中")
@@ -69,10 +73,10 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     
     # 测试数据库连接
     begin
-      @logger.info("测试数据库连接...")
+      @logger.info("测试数据库连接...") if @verbose_logging
       test_conn = DriverManager.getConnection(@connection_string, @username, @password)
       if test_conn.isValid(5)
-        @logger.info("数据库连接测试成功")
+        @logger.info("数据库连接测试成功") if @verbose_logging
         test_conn.close()
       else
         @logger.error("数据库连接测试失败")
@@ -91,23 +95,11 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     @last_flush_time = Time.now
     @prepared_statements = {}
     
-    @logger.info("初始化连接池，大小: #{@max_pool_size}")
-    @max_pool_size.times do |i|
-      begin
-        @logger.info("创建连接 #{i+1}/#{@max_pool_size}")
-        conn = get_connection
-        if conn
-          @connection_pool << conn
-          @logger.info("连接 #{i+1} 创建成功")
-        else
-          @logger.warn("连接 #{i+1} 创建失败")
-        end
-      rescue => e
-        @logger.warn("创建连接 #{i+1} 时出错: #{e.message}")
-      end
-    end
+    @logger.info("初始化连接池，最大大小: #{@max_pool_size}") if @verbose_logging
+    # 不在启动时预创建所有连接，而是在需要时动态创建
+    # 这样可以避免启动时的连接问题，并且更有效地管理连接资源
     
-    @logger.info("连接池初始化完成，实际连接数: #{@connection_pool.size}")
+    @logger.info("连接池初始化完成，将按需创建连接")
     
     # 获取目标表字段信息
     @field_info = get_table_field_info
@@ -128,6 +120,15 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
       end
     end
     
+    # 启动连接池监控线程
+    @logger.info("启动连接池监控线程，间隔: #{@pool_monitor_interval}秒")
+    @pool_monitor_thread = Thread.new do
+      loop do
+        sleep @pool_monitor_interval
+        monitor_connection_pool
+      end
+    end
+    
     @logger.info("=== QL JDBC 插件注册完成 ===")
   end
 
@@ -137,62 +138,128 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     @batch_mutex.synchronize do
       @batch_buffer << event
       current_batch_size = @batch_buffer.size
-      @logger.info("Added event to batch buffer. Current batch size: #{current_batch_size}, Batch threshold: #{@batch_size}")
+      @logger.debug("Added event to batch buffer. Current batch size: #{current_batch_size}, Batch threshold: #{@batch_size}") if @verbose_logging
       
       if current_batch_size >= @batch_size
-        @logger.info("Batch threshold reached. Starting flush process...")
+        @logger.info("Batch threshold reached. Starting flush process...") if @verbose_logging
         flush_batch_with_retry
       end
     end
     processing_time = ((Time.now - start_time) * 1000).round(2)
-    @logger.info("Event processing completed in #{processing_time}ms")
+    @logger.debug("Event processing completed in #{processing_time}ms") if @verbose_logging
   end
 
   public
   def close
     @logger.info("Closing QL JDBC output plugin")
+    
+    # 停止监控线程
+    @pool_monitor_thread.exit if @pool_monitor_thread
+    @flush_thread.exit if @flush_thread
+    
+    # 刷新剩余数据
     @batch_mutex.synchronize { flush_batch_with_retry if @batch_buffer.size > 0 }
     
     # 关闭预处理语句
     @prepared_statements.each { |key, stmt| stmt.close() if stmt rescue nil }
     @prepared_statements.clear
     
+    # 关闭所有连接
     @pool_mutex.synchronize do
       @connection_pool.each { |conn| conn.close() if conn && !conn.isClosed() rescue nil }
       @connection_pool.clear
     end
-    # 停止定时刷新线程
-    @flush_thread.exit if @flush_thread
+    
+    @logger.info("QL JDBC output plugin closed successfully")
   end
 
   private
   def get_connection
     @pool_mutex.synchronize do
+      # 首先尝试从连接池中获取可用连接
       @connection_pool.each do |conn|
-        return conn if conn && !conn.isClosed() && conn.isValid(5) rescue nil
+        if conn && !conn.isClosed() && conn.isValid(5)
+          @logger.debug("Reusing existing connection from pool") if @verbose_logging
+          return conn
+        end
       end
       
-      retry_count = 0
-      begin
-        if @connection_pool.size < @max_pool_size
+      # 清理无效连接
+      @connection_pool.reject! do |conn|
+        if conn.nil? || conn.isClosed() || !conn.isValid(5)
+          @logger.debug("Removing invalid connection from pool") if @verbose_logging
+          conn.close() rescue nil
+          true
+        else
+          false
+        end
+      end
+      
+      # 如果连接池未满，创建新连接
+      if @connection_pool.size < @max_pool_size
+        retry_count = 0
+        begin
           conn = DriverManager.getConnection(@connection_string, @username, @password)
           conn.setAutoCommit(false)
           @connection_pool << conn
-          @logger.info("Created new database connection")
+          @logger.info("Created new database connection. Pool size: #{@connection_pool.size}/#{@max_pool_size}")
           return conn
-        else
-          raise "Connection pool is full"
+        rescue => e
+          retry_count += 1
+          if retry_count <= @max_retries
+            @logger.warn("Failed to create database connection (attempt #{retry_count}/#{@max_retries}): #{e.message}")
+            sleep(@retry_delay / 1000.0)
+            retry
+          else
+            @logger.error("Failed to create database connection after #{@max_retries} attempts: #{e.message}")
+            raise e
+          end
         end
-      rescue => e
-        retry_count += 1
-        if retry_count <= @max_retries
-          @logger.warn("Failed to create database connection (attempt #{retry_count}/#{@max_retries}): #{e.message}")
-          sleep(@retry_delay / 1000.0)
-          retry
-        else
-          @logger.error("Failed to create database connection after #{@max_retries} attempts: #{e.message}")
-          raise e
+      else
+        @logger.error("Connection pool is full (#{@connection_pool.size}/#{@max_pool_size}). Available connections: #{@connection_pool.count { |conn| conn && !conn.isClosed() && conn.isValid(5) rescue false }}")
+        raise "Connection pool is full"
+      end
+    end
+  end
+
+  private
+  def return_connection_to_pool(conn)
+    return unless conn
+    
+    @pool_mutex.synchronize do
+      # 检查连接是否仍然有效
+      if conn && !conn.isClosed() && conn.isValid(5)
+        @logger.debug("Returning valid connection to pool") if @verbose_logging
+        # 连接已经在池中，不需要额外操作
+      else
+        # 连接无效，从池中移除
+        @connection_pool.reject! { |c| c == conn }
+        @logger.warn("Removed invalid connection from pool") if @verbose_logging
+        conn.close() rescue nil
+      end
+    end
+  end
+
+  private
+  def monitor_connection_pool
+    @pool_mutex.synchronize do
+      total_connections = @connection_pool.size
+      valid_connections = @connection_pool.count { |conn| conn && !conn.isClosed() && conn.isValid(5) rescue false }
+      
+      @logger.info("连接池状态监控 - 总连接数: #{total_connections}/#{@max_pool_size}, 有效连接数: #{valid_connections}")
+      
+      # 清理无效连接
+      if total_connections > valid_connections
+        @logger.warn("检测到 #{total_connections - valid_connections} 个无效连接，正在清理...")
+        @connection_pool.reject! do |conn|
+          if conn.nil? || conn.isClosed() || !conn.isValid(5)
+            conn.close() rescue nil
+            true
+          else
+            false
+          end
         end
+        @logger.info("连接池清理完成，当前有效连接数: #{@connection_pool.size}")
       end
     end
   end
@@ -227,7 +294,7 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
     return unless conn
     
     batch_size = @batch_buffer.size
-    @logger.info("Starting batch flush. Batch size: #{batch_size}, Connection pool size: #{@connection_pool.size}")
+    @logger.info("Starting batch flush. Batch size: #{batch_size}, Connection pool size: #{@connection_pool.size}") if @verbose_logging
     
     begin
       # 使用缓存的预处理语句
@@ -238,9 +305,9 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
         stmt = conn.prepareStatement(@statement.first)
         @prepared_statements[stmt_key] = stmt
         stmt_prepare_time = ((Time.now - stmt_prepare_start) * 1000).round(2)
-        @logger.info("Prepared statement created in #{stmt_prepare_time}ms")
+        @logger.info("Prepared statement created in #{stmt_prepare_time}ms") if @verbose_logging
       else
-        @logger.info("Using cached prepared statement")
+        @logger.debug("Using cached prepared statement") if @verbose_logging
       end
       
       # 记录参数设置开始时间
@@ -272,19 +339,19 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
         stmt.addBatch()
       end
       param_setup_time = ((Time.now - param_setup_start) * 1000).round(2)
-      @logger.info("Parameter setup completed in #{param_setup_time}ms for #{batch_size} records")
+      @logger.debug("Parameter setup completed in #{param_setup_time}ms for #{batch_size} records") if @verbose_logging
       
       # 记录执行开始时间
       execute_start = Time.now
       stmt.executeBatch()
       execute_time = ((Time.now - execute_start) * 1000).round(2)
-      @logger.info("Batch execution completed in #{execute_time}ms")
+      @logger.debug("Batch execution completed in #{execute_time}ms") if @verbose_logging
       
       # 记录提交开始时间
       commit_start = Time.now
       conn.commit()
       commit_time = ((Time.now - commit_start) * 1000).round(2)
-      @logger.info("Transaction commit completed in #{commit_time}ms")
+      @logger.debug("Transaction commit completed in #{commit_time}ms") if @verbose_logging
       
       total_time = ((Time.now - start_time) * 1000).round(2)
       records_per_second = (batch_size / (total_time / 1000.0)).round(2)
@@ -293,13 +360,16 @@ class LogStash::Outputs::QlJdbc < LogStash::Outputs::Base
       
       # 添加数据库插入后的延迟控制
       if @output_delay > 0
-        @logger.info("Applying output delay after database insertion: #{@output_delay}ms")
+        @logger.debug("Applying output delay after database insertion: #{@output_delay}ms") if @verbose_logging
         sleep(@output_delay / 1000.0)
       end
     rescue => e
       conn.rollback()
       @logger.error("Batch flush failed after #{((Time.now - start_time) * 1000).round(2)}ms: #{e.message}")
       raise e
+    ensure
+      # 重要：将连接返回到连接池
+      return_connection_to_pool(conn)
     end
   end
   
